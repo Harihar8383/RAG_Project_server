@@ -5,6 +5,7 @@ import { clerkMiddleware, requireAuth } from '@clerk/express';
 import connectDB from './config/db.js'; // Import the db connection function
 import projectRoutes from './routes/project.routes.js';
 import chatRoutes from './routes/chat.routes.js';
+import documentRoutes from './routes/document.routes.js';
 
 // Import UploadThing
 import { createRouteHandler } from "uploadthing/express";
@@ -28,7 +29,7 @@ const startServer = async () => {
       "/api/uploadthing",
       createRouteHandler({ router: uploadRouter })
     );
-
+    app.use('/api/projects/:projectId/documents', documentRoutes);
     app.use('/api/projects/:projectId/chats', chatRoutes);
     app.use('/api/projects', projectRoutes);
 

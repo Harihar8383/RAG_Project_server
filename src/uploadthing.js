@@ -1,36 +1,45 @@
 import { createUploadthing } from "uploadthing/express";
 import { UploadThingError } from "uploadthing/server";
+import { z } from "zod";
+import Document from "./models/document.models.js";
 
 const f = createUploadthing();
 
-// Middleware to authenticate the user for each upload
-const authMiddleware = async ({ req }) => {
-  // `req.auth` is populated by our clerkMiddleware
-  const auth = req.auth;
+// The middleware now accepts `input` as an argument
+const authMiddleware = async ({ req, input }) => {
+  const auth = req.auth();
   if (!auth.userId) throw new UploadThingError("Unauthorized");
 
-  // Return whatever you want to be available in onUploadComplete
-  return { userId: auth.userId };
+  // --- CHANGE #1: Return both userId and the input ---
+  // This makes both available in the `metadata` of onUploadComplete
+  return { userId: auth.userId, projectId: input.projectId };
 };
 
-// Define your FileRouter
 export const uploadRouter = {
-  // Define a route for document uploads
   documentUploader: f({
-    // Specify allowed file types and sizes
     pdf: { maxFileSize: "32MB", maxFileCount: 5 },
-    text: { maxFileSize: "4MB", maxFileCount: 5 }, // for .csv
+    text: { maxFileSize: "4MB", maxFileCount: 5 },
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { maxFileSize: "16MB", maxFileCount: 5 },
   })
-    // Apply the authentication middleware
+    .input(z.object({ projectId: z.string() }))
     .middleware(authMiddleware)
-    // This code runs on your server after a successful upload
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("[UploadThing] Upload complete for userId:", metadata.userId);
-      console.log("[UploadThing] File details:", file);
+      
+      // --- CHANGE #2: Access projectId directly from metadata ---
+      const { projectId } = metadata;
 
-      // IMPORTANT: This is where we will trigger our RAG pipeline in the next step.
-      // We will save the file details to our database here.
+      try {
+        const newDocument = await Document.create({
+          project: projectId,
+          name: file.name,
+          url: file.ufsUrl,
+          key: file.key,
+        });
+        console.log("[DB] Saved document to database:", newDocument);
+      } catch (error) {
+        console.error("[DB] Error saving document:", error);
+      }
 
       return { uploadedBy: metadata.userId };
     }),
