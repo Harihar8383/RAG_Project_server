@@ -48,22 +48,32 @@ async function clerk(path, method = "GET", body) {
 }
 
 async function makeUser(label) {
+  // Clerk test addresses (the +clerk_test suffix) are accepted by development instances.
   const user = await clerk("/users", "POST", {
-    email_address: [`live-${label}-${stamp}@example.com`],
+    email_address: [`live-${label}-${stamp}+clerk_test@example.com`],
     password: `Live-${stamp}-Pass!x9`,
     skip_password_checks: true,
   });
   const session = await clerk("/sessions", "POST", { user_id: user.id });
-  const token = await clerk(`/sessions/${session.id}/tokens`, "POST");
-  return { id: user.id, token: token.jwt };
+  return { id: user.id, sessionId: session.id, token: null, tokenAt: 0 };
+}
+
+// Clerk session tokens are short lived (about one minute), so each request uses a token that is at most 30 s old.
+async function freshToken(user) {
+  if (!user.token || Date.now() - user.tokenAt > 30000) {
+    const out = await clerk(`/sessions/${user.sessionId}/tokens`, "POST");
+    user.token = out.jwt;
+    user.tokenAt = Date.now();
+  }
+  return user.token;
 }
 
 async function api(user, path, init = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const token = await freshToken(user);
+  return fetch(`${BASE}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json", ...(init.headers || {}) },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init.headers || {}) },
   });
-  return res;
 }
 
 async function json(user, path, init) {
@@ -154,7 +164,7 @@ async function main() {
       const out = await uploadFiles("documentUploader", {
         files: [file],
         input: { projectId },
-        headers: { Authorization: `Bearer ${alice.token}` },
+        headers: { Authorization: `Bearer ${await freshToken(alice)}` },
       });
       must(out.length === 1, "no upload result");
       const end = Date.now() + TIMEOUT;
