@@ -7,7 +7,7 @@ Express API for Second Brain (the Verix interface). It stores projects, document
 1. Install Node 20 or newer, then run `npm install --legacy-peer-deps`.
 2. Copy `.env.example` to `.env` and fill in every value.
 3. In Pinecone, create the index named in `PINECONE_INDEX` with 768 dimensions and the cosine metric.
-4. Run `npm run dev` (or `npm start`). The server listens on `PORT` (default 8000). `GET /api/health` answers 200.
+4. Run `npm run dev`. The server listens on `PORT` (default 8000). `GET /api/health` answers 200. On a local machine use `npm run dev`, which sets `NODE_ENV=development`. In that mode the server forwards the UploadThing completion callback itself. With `npm start` and no `NODE_ENV`, UploadThing tries to call `localhost` from its own servers and the document never leaves the queued state.
 
 ## API
 
@@ -36,7 +36,7 @@ The question stream sends `status` (`retrieving`, then `generating`), `chunk`, `
 
 `npm test` runs the whole suite offline. It uses the real Express app, routers, controllers and Mongoose validation with in-memory stand-ins for MongoDB, Pinecone, Gemini, UploadThing and Clerk, so it needs no keys or network.
 
-`npm run test:live` runs the same journey against the real services. Start the server first with a complete `.env`. The script creates two throwaway Clerk users through the Clerk Backend API, uploads a sample file, waits for indexing, asks questions, checks source labels and cross-user isolation, deletes the document and the project, and removes the users. It prints one PASS or FAIL line per step.
+`npm run test:live` runs the same journey against the real services. Start the server first with a complete `.env`. The script creates two throwaway Clerk users through the Clerk Backend API, uploads a sample text file plus a real PDF, DOCX and CSV from `scripts/fixtures/`, waits for indexing, asks questions, checks source labels and cross-user isolation, deletes the document and the project, and removes the users. It prints one PASS or FAIL line per step.
 
 ## Manual check in the browser
 

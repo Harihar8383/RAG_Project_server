@@ -10,7 +10,38 @@
 // Optional: LIVE_BASE_URL=http://localhost:8000/api  LIVE_TIMEOUT_MS=120000
 
 import "../src/config/env.js";
+import fs from "node:fs";
 import { genUploader } from "uploadthing/client";
+
+// The UploadThing browser client uploads with XMLHttpRequest, which Node does not have.
+// This small stand-in covers the calls the client makes, so the script runs the same upload code as the browser.
+globalThis.XMLHttpRequest = class {
+  constructor() {
+    this.headers = {};
+    this.listeners = {};
+    this.upload = { addEventListener() {} };
+  }
+  open(method, url) {
+    this.method = method;
+    this.url = url;
+  }
+  setRequestHeader(name, value) {
+    this.headers[name] = value;
+  }
+  addEventListener(type, fn) {
+    this.listeners[type] = fn;
+  }
+  send(body) {
+    fetch(this.url, { method: this.method, headers: this.headers, body })
+      .then(async (res) => {
+        this.status = res.status;
+        this.statusText = res.statusText;
+        this.response = await res.json().catch(() => null);
+        this.listeners.load?.();
+      })
+      .catch(() => this.listeners.error?.());
+  }
+};
 
 const BASE = process.env.LIVE_BASE_URL || `http://localhost:${process.env.PORT || 8000}/api`;
 const TIMEOUT = Number(process.env.LIVE_TIMEOUT_MS || 120000);
@@ -159,7 +190,7 @@ async function main() {
 
     let document;
     await step("Alice uploads a text file through UploadThing", async () => {
-      const { uploadFiles } = genUploader({ url: `${BASE}/uploadthing`, package: "uploadthing" });
+      const { uploadFiles } = genUploader({ url: `${BASE}/uploadthing`, package: "uploadthing", fetch: globalThis.fetch });
       const file = new File([SAMPLE], "northwind-handbook.txt", { type: "text/plain" });
       const out = await uploadFiles("documentUploader", {
         files: [file],
@@ -217,6 +248,36 @@ async function main() {
       must(body[1].sources.length > 0, "the first answer lost its sources");
     });
 
+    await step("A real PDF, DOCX and CSV are parsed, indexed and answer questions", async () => {
+      const { uploadFiles } = genUploader({ url: `${BASE}/uploadthing`, package: "uploadthing", fetch: globalThis.fetch });
+      const cases = [
+        ["orion-fleet.pdf", "application/pdf", "What is the maintenance interval for an Orion truck?", /12[, ]?000/],
+        ["lotus-leave.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "How many days of paid leave does an employee get?", /24/],
+        ["pricing.csv", "text/csv", "What does the Team plan cost per month?", /79/],
+      ];
+      const files = cases.map(([name, type]) => new File([fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url))], name, { type }));
+      await uploadFiles("documentUploader", { files, input: { projectId }, headers: { Authorization: `Bearer ${await freshToken(alice)}` } });
+      const notes = [];
+      for (const [name, , question, expected] of cases) {
+        let doc;
+        const end = Date.now() + TIMEOUT;
+        while (!doc) {
+          const { body } = await json(alice, `/projects/${projectId}/documents`);
+          doc = body.find((d) => d.name === name);
+          if (!doc && Date.now() > end) throw new Error(`${name} never appeared`);
+          if (!doc) await new Promise((r) => setTimeout(r, 2000));
+        }
+        const done = await waitForStatus(alice, projectId, doc._id, ["indexed", "failed"]);
+        must(done.status === "indexed", `${name} ended ${done.status}: ${done.failureReason}`);
+        const r = await ask(alice, projectId, chatId, question);
+        must(r.done && !r.error, `${name} stream ended with ${r.error || "no done event"}`);
+        must(r.sources.some((x) => x.fileName === name), `${name} was not cited. Sources: ${r.sources.map((x) => x.fileName).join(", ")}`);
+        must(expected.test(r.answer), `${name} answer was "${r.answer.slice(0, 120)}"`);
+        notes.push(`${name} ${done.chunkCount} chunk(s)`);
+      }
+      return notes.join("; ");
+    });
+
     await step("Bob cannot read, ask in, list or delete Alice's data", async () => {
       for (const [method, path] of [
         ["GET", `/projects/${projectId}`],
@@ -251,15 +312,15 @@ async function main() {
       must(!body.some((d) => d._id === document._id), "the record is still listed");
     });
 
-    await step("After the delete, the same question retrieves no source", async () => {
+    await step("After the delete, no source names the deleted file", async () => {
       // Pinecone is eventually consistent, so allow a short wait for the delete to be visible
       let last;
       for (let i = 0; i < 6; i += 1) {
         last = await ask(alice, projectId, chatId, "How many days is the refund window?");
-        if (last.sources.length === 0) return;
+        if (!last.sources.some((x) => x.fileName === document.name)) return;
         await new Promise((r) => setTimeout(r, 3000));
       }
-      throw new Error(`still retrieved ${last.sources.length} source(s)`);
+      throw new Error(`${document.name} is still retrieved after the delete`);
     });
 
     await step("Deleting the project removes it and its conversations", async () => {
