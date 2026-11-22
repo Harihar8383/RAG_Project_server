@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development nodemon src/index.js"
+    "dev": "cross-env NODE_ENV=development nodemon src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:live": "node scripts/live_e2e.mjs"
   },
   "keywords": [],
   "author": "",
@@ -15,11 +18,14 @@
     "@langchain/community": "^0.3.57",
     "@langchain/core": "^0.3.78",
     "@langchain/google-genai": "^0.2.18",
+    "@langchain/textsplitters": "^0.1.0",
     "@pinecone-database/pinecone": "^6.1.2",
     "cors": "^2.8.5",
+    "d3-dsv": "^3.0.2",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "langchain": "^0.3.35",
+    "mammoth": "^1.13.0",
     "mongoose": "^8.19.1",
     "pdf-parse": "^1.1.1",
     "uploadthing": "^7.7.4",
@@ -28,5 +34,8 @@
   "devDependencies": {
     "cross-env": "^10.1.0",
     "nodemon": "^3.1.10"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
