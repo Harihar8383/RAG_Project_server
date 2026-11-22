@@ -7,7 +7,7 @@ export function createGeminiLlm({ apiKey, model = "gemini-2.5-flash" }) {
     if (!chain) {
       const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
       const { StringOutputParser } = await import("@langchain/core/output_parsers");
-      chain = new ChatGoogleGenerativeAI({ model, apiKey, temperature: 0.2, streaming: true }).pipe(
+      chain = new ChatGoogleGenerativeAI({ model, apiKey, temperature: 0.2, streaming: true, maxRetries: 1 }).pipe(
         new StringOutputParser()
       );
     }

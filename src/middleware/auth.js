@@ -31,8 +31,16 @@ export async function ensureUser(userId, services) {
   } catch {
     email = undefined;
   }
-  user = await User.create({ clerkId: userId, email: email || `${userId}@users.invalid` });
-  return user;
+  try {
+    return await User.create({ clerkId: userId, email: email || `${userId}@users.invalid` });
+  } catch (err) {
+    // A new user's page sends several requests at once, and another request may have created the record first.
+    if (err?.code === 11000) {
+      const existing = await User.findOne({ clerkId: userId });
+      if (existing) return existing;
+    }
+    throw err;
+  }
 }
 
 export async function loadUser(req, _res, next) {

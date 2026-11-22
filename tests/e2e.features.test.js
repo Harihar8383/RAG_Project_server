@@ -257,6 +257,55 @@ test("C06 [FR-09] A model failure sends an error event and stores the partial an
   assert.equal(stored[0].content, "one two three ");
 });
 
+test("A05b A new user whose first requests arrive together is created once and every request succeeds", async () => {
+  h.services.state.identityDelayMs = 40;
+  const results = await Promise.all([
+    h.json("GET", "/api/projects", "user_new"),
+    h.json("GET", "/api/projects", "user_new"),
+    h.json("GET", "/api/projects", "user_new"),
+  ]);
+  assert.deepEqual(results.map((r) => r.status), [200, 200, 200]);
+  assert.equal(db.rows("User").filter((u) => u.clerkId === "user_new").length, 1);
+});
+
+test("C06d [FR-09] A usage-limit failure tells the user so, without exposing the provider message", async () => {
+  const p = await project("user_a");
+  await indexed("user_a", p._id, "a.txt", [PAGE("alpha beta gamma delta")]);
+  const c = await chat("user_a", p._id);
+  h.services.state.llmFailAfter = 0;
+  h.services.state.llmFailMessage = "[429 Too Many Requests] You exceeded your current quota, key AIza-secret";
+  const { events } = await h.ask("user_a", p._id, c._id, "alpha beta?");
+  const message = events.find((e) => e.error).error;
+  assert.match(message, /usage limit/);
+  assert.ok(!/AIza|429|quota/.test(message), "the provider text stays on the server");
+});
+
+test("C06b [FR-09] A model that stops answering ends with an error event and an incomplete message", async () => {
+  const p = await project("user_a");
+  await indexed("user_a", p._id, "a.txt", [PAGE("alpha beta gamma delta")]);
+  const c = await chat("user_a", p._id);
+  h.app.locals.answerIdleMs = 150;
+  h.services.state.llmHang = true;
+  const { events } = await h.ask("user_a", p._id, c._id, "alpha beta?");
+  assert.ok(events.some((e) => e.error), "an error event reaches the client");
+  assert.match(events.find((e) => e.error).error, /did not respond in time/);
+  assert.ok(!events.some((e) => e.done));
+  const stored = db.rows("Message").filter((m) => m.role === "assistant");
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].incomplete, true);
+});
+
+test("C06c [FR-09] An embedding service that stops answering ends with an error event", async () => {
+  const p = await project("user_a");
+  await indexed("user_a", p._id, "a.txt", [PAGE("alpha beta gamma delta")]);
+  const c = await chat("user_a", p._id);
+  h.app.locals.answerIdleMs = 150;
+  h.services.state.embedHang = true;
+  const { events } = await h.ask("user_a", p._id, c._id, "alpha beta?");
+  assert.ok(events.some((e) => e.error), "an error event reaches the client");
+  assert.ok(!events.some((e) => e.done));
+});
+
 test("C07 [FR-09] A client that leaves mid-stream leaves an incomplete assistant message", async () => {
   const p = await project("user_a");
   await indexed("user_a", p._id, "a.txt", [PAGE("alpha beta gamma delta")]);

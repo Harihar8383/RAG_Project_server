@@ -6,6 +6,17 @@ import { log, safeError } from "../utils/log.js";
 import { NOT_FOUND_TEXT } from "../services/rag.js";
 
 const MAX_QUESTION = 4000;
+const ANSWER_IDLE_MS = 45000;
+
+// The message the user sees. It names a usage limit or a stall, and hides every other detail of the failure.
+function answerErrorText(err) {
+  const text = String(err?.message || "");
+  if (/AnswerStalled/.test(text)) return "The answer service did not respond in time. Try again in a moment.";
+  if (/429|quota|rate limit|RESOURCE_EXHAUSTED/i.test(text)) {
+    return "The answer service has reached its usage limit. Try again later.";
+  }
+  return "The answer could not be completed.";
+}
 
 async function findOwnedChat(req) {
   const project = await findOwnedProject(req);
@@ -76,15 +87,39 @@ export const createChatMessage = async (req, res) => {
     }
   });
 
+  // If the embedding service, the vector index or the model stops answering, abort after a quiet period
+  // so that the user sees an error instead of a spinner that never ends.
+  const idleMs = req.app.locals.answerIdleMs ?? ANSWER_IDLE_MS;
+  let stalled = false;
+  let idleTimer;
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      stalled = true;
+      controller.abort();
+    }, idleMs);
+  };
+  const stalledError = new Promise((_, reject) => {
+    controller.signal.addEventListener("abort", () => reject(new Error(stalled ? "AnswerStalled" : "AbortError")));
+  });
+  stalledError.catch(() => {});
+
+  const startedAt = Date.now();
   let answer = "";
   let sources = [];
   try {
+    resetIdle();
     send({ status: "retrieving" });
-    const retrieved = await rag.retrieveContext({
-      query: question,
-      ownerId: req.localUser._id,
-      projectId: project._id,
-    });
+    const retrieved = await Promise.race([
+      rag.retrieveContext({
+        query: question,
+        ownerId: req.localUser._id,
+        projectId: project._id,
+      }),
+      stalledError,
+    ]);
+    resetIdle();
+    log.info("chat retrieval done", { chatId: String(chat._id), ms: Date.now() - startedAt, sources: retrieved.sources.length });
     sources = retrieved.sources;
 
     send({ status: "generating" });
@@ -95,11 +130,15 @@ export const createChatMessage = async (req, res) => {
     } else {
       for await (const piece of rag.streamAnswer({ context: retrieved.context, question, signal: controller.signal })) {
         if (clientLeft) break;
+        resetIdle();
+        if (!answer) log.info("chat first token", { chatId: String(chat._id), ms: Date.now() - startedAt });
         answer += piece;
         send({ chunk: piece });
       }
     }
 
+    clearTimeout(idleTimer);
+    if (stalled) throw new Error("AnswerStalled");
     if (clientLeft) {
       await Message.create({ chat: chat._id, role: "assistant", content: answer, sources, incomplete: true });
       return;
@@ -109,13 +148,14 @@ export const createChatMessage = async (req, res) => {
     send({ done: true });
     res.end();
   } catch (err) {
+    clearTimeout(idleTimer);
     log.error("chat answer failed", { chatId: String(chat._id), ...safeError(err) });
     try {
       await Message.create({ chat: chat._id, role: "assistant", content: answer, sources, incomplete: true });
     } catch {
       // the error event below still tells the client
     }
-    send({ error: "The answer could not be completed." });
+    send({ error: answerErrorText(err) });
     res.end();
   }
 };

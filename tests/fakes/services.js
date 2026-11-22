@@ -29,8 +29,12 @@ export function createFakeServices() {
     failDeleteFile: false,
     failLoader: false,
     llmAnswer: "The documents say so [S1].",
+    llmFailMessage: null, // text of the error the model throws
     llmFailAfter: null, // number of pieces after which the model throws
     llmDelayMs: 0,
+    identityDelayMs: 0,
+    llmHang: false, // the model never answers
+    embedHang: false, // the embedding service never answers
     embedCalls: 0,
     llmPrompts: [],
     deletedKeys: [],
@@ -50,6 +54,7 @@ export function createFakeServices() {
         return texts.map(embedText);
       },
       async embedQuery(text) {
+        if (state.embedHang) await new Promise(() => {});
         return embedText(text);
       },
     },
@@ -92,10 +97,11 @@ export function createFakeServices() {
     llm: {
       async *stream(prompt, { signal } = {}) {
         state.llmPrompts.push(prompt);
+        if (state.llmHang) await new Promise((resolve) => signal?.addEventListener("abort", resolve));
         const pieces = state.llmAnswer.split(/(?<=\s)/);
         for (let i = 0; i < pieces.length; i += 1) {
           if (signal?.aborted) return;
-          if (state.llmFailAfter !== null && i >= state.llmFailAfter) throw new Error("model unavailable");
+          if (state.llmFailAfter !== null && i >= state.llmFailAfter) throw new Error(state.llmFailMessage || "model unavailable");
           if (state.llmDelayMs) await new Promise((r) => setTimeout(r, state.llmDelayMs));
           yield pieces[i];
         }
@@ -104,6 +110,7 @@ export function createFakeServices() {
 
     identity: {
       async getEmail(userId) {
+        if (state.identityDelayMs) await new Promise((r) => setTimeout(r, state.identityDelayMs));
         return `${userId}@example.test`;
       },
     },

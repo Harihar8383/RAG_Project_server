@@ -52,7 +52,8 @@ for (const [name, Model] of Object.entries(models)) {
     if (error) throw error;
     const row = JSON.parse(JSON.stringify(instance.toJSON()));
     row._id = objectId();
-    if (name === "Document" && rows().some((r) => r.key === row.key)) {
+    const unique = name === "Document" ? "key" : name === "User" ? "clerkId" : null;
+    if (unique && rows().some((r) => r[unique] === row[unique])) {
       const dup = new Error("E11000 duplicate key error");
       dup.code = 11000;
       throw dup;

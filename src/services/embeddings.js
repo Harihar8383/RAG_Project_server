@@ -4,6 +4,7 @@
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const BATCH_SIZE = 100;
+const REQUEST_TIMEOUT_MS = 30000;
 
 export function normalize(vector) {
   const length = Math.hypot(...vector) || 1;
@@ -27,6 +28,7 @@ export function createGeminiEmbeddings({
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({ requests }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`The embedding service answered with status ${res.status}.`);
     const json = await res.json();
