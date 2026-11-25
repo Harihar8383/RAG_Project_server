@@ -3,7 +3,7 @@ import Document from "../models/document.models.js";
 import { assertObjectId, findOwnedProject } from "../middleware/auth.js";
 import { HttpError } from "../utils/httpError.js";
 import { log, safeError } from "../utils/log.js";
-import { dailyLimits, examMapMinScore } from "../config/env.js";
+import { dailyLimits, examMapMinScore, examMapWordScore } from "../config/env.js";
 import { LABELS, MAX_TEXT, MAX_TOPICS, judge, keyTerms, parseTopics } from "../services/examMap.js";
 import { takeUsage, refundUsage } from "../services/usage.js";
 import { TOP_K } from "../services/rag.js";
@@ -42,7 +42,7 @@ export const createExamMap = async (req, res) => {
       const batch = topics.slice(i, i + SEARCHES_AT_ONCE).map(async (topic, j) => {
         const matches = await rag.search({ vector: vectors[i + j], ownerId: userId, projectId: project._id, limit: TOP_K });
         const terms = keyTerms(topic);
-        return { topic, terms, ...judge(terms, matches, examMapMinScore()) };
+        return { topic, terms, ...judge(terms, matches, examMapMinScore(), examMapWordScore()) };
       });
       items.push(...(await Promise.all(batch)));
     }

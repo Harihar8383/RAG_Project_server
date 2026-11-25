@@ -28,6 +28,8 @@ export function readConfig(env = process.env) {
     embeddingDimensions: Number(env.EMBEDDING_DIMENSIONS) || 768,
     embeddingTokensPerMinute: Number(env.EMBEDDING_TOKENS_PER_MINUTE) || 30000,
     chatModel: env.CHAT_MODEL || "gemini-3.1-flash-lite",
+    // Tried in order when the model before is overloaded or out of quota. Each Gemini model has its own free quota.
+    chatFallbackModels: (env.CHAT_FALLBACK_MODELS ?? "gemini-2.5-flash-lite,gemini-2.5-flash").split(",").map((m) => m.trim()).filter(Boolean),
     pineconeApiKey: env.PINECONE_API_KEY,
     pineconeIndex: env.PINECONE_INDEX || "rag-documents",
     pineconeIndexHost: env.INDEX_HOST_URL,
@@ -46,6 +48,8 @@ export function dailyLimits(env = process.env) {
 
 /** The similarity an Exam Map passage needs. The default is a starting guess: tune it with real notes. */
 export const examMapMinScore = (env = process.env) => Number(env.EXAM_MAP_MIN_SCORE) || 0.65;
+// Measured with gemini-embedding-001 (768): unrelated topics scored up to 0.59, topics in the notes 0.61 to 0.72.
+export const examMapWordScore = (env = process.env) => Number(env.EXAM_MAP_WORD_SCORE) || 0.6;
 
 /** Names of the required variables that are missing, so a start-up error can list them without printing values. */
 export function missingEnv(env = process.env) {

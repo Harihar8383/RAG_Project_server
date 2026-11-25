@@ -18,7 +18,7 @@ export function createServices(env = process.env) {
       dimensions: config.embeddingDimensions,
       tokensPerMinute: config.embeddingTokensPerMinute,
     }),
-    llm: createGeminiLlm({ apiKey: config.googleApiKey, model: config.chatModel }),
+    llm: createGeminiLlm({ apiKey: config.googleApiKey, models: [config.chatModel, ...config.chatFallbackModels] }),
     vectorStore: createPineconeStore({
       apiKey: config.pineconeApiKey,
       indexName: config.pineconeIndex,

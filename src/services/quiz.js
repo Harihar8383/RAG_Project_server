@@ -92,6 +92,9 @@ export function createQuizMaker(services) {
         await refundUsage(SHARED_USER, "answers", 1);
       }
       log.warn("quiz failed", { documentId: String(doc._id), ...safeError(err) });
+      if (/\b503\b|overloaded|high demand/i.test(String(err?.message))) {
+        throw new HttpError(503, "The AI service is busy right now. Try again in a minute.");
+      }
       throw new HttpError(502, "The quiz could not be made. Try again.");
     }
   }

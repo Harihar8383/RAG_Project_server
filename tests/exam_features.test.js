@@ -52,6 +52,17 @@ test("E02 A strong match needs similarity and key words in the same passage", ()
   assert.equal(none.passage, undefined);
 });
 
+test("E02b Words in the passage lower the similarity needed, and small typos in long words still match", () => {
+  const passage = (text, score) => ({ score, metadata: { text, fileName: "a", documentId: "d" } });
+  const notes = "Inheritance: a class reuses and extends another class.";
+  const typo = judge(keyTerms("inheritence"), [passage("other", 0.64), passage(notes, 0.62)], 0.65, 0.6);
+  assert.equal(typo.label, "strong");
+  assert.deepEqual(typo.matched, ["inheritance"]);
+  assert.equal(judge(keyTerms("inheritance"), [passage(notes, 0.55)], 0.65, 0.6).label, "check");
+  assert.equal(judge(keyTerms("OS"), [passage("other", 0.62)], 0.65, 0.6).label, "none");
+  assert.equal(judge(keyTerms("glass"), [passage("class", 0.9)], 0.95, 0.6).label, "none"); // short words need an exact match
+});
+
 test("E03 The Exam Map uses one embedding request, no model call, and reports evidence and skipped files", async () => {
   const p = await project();
   await addFile(p);

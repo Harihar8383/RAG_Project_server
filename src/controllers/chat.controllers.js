@@ -20,6 +20,7 @@ function answerErrorText(err) {
   if (/\b429\b|quota|rate limit|RESOURCE_EXHAUSTED|daily limit/i.test(text)) {
     return "The answer service has reached its usage limit. Try again later.";
   }
+  if (/\b503\b|overloaded|high demand/i.test(text)) return "The AI service is busy right now. Try again in a minute.";
   return "The answer could not be completed.";
 }
 
