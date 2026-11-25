@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 // Load the .env file before any other module reads process.env.
 dotenv.config();
 
+// Kept so that start-up can warn: an unset NODE_ENV on a live server would run UploadThing in development mode.
+export const NODE_ENV_DEFAULTED = !process.env.NODE_ENV;
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = "development";
 }
@@ -24,10 +26,19 @@ export function readConfig(env = process.env) {
     googleApiKey: env.GOOGLE_API_KEY,
     embeddingModel: env.EMBEDDING_MODEL || "gemini-embedding-001",
     embeddingDimensions: Number(env.EMBEDDING_DIMENSIONS) || 768,
+    embeddingTokensPerMinute: Number(env.EMBEDDING_TOKENS_PER_MINUTE) || 30000,
     chatModel: env.CHAT_MODEL || "gemini-3.1-flash-lite",
     pineconeApiKey: env.PINECONE_API_KEY,
     pineconeIndex: env.PINECONE_INDEX || "rag-documents",
     pineconeIndexHost: env.INDEX_HOST_URL,
+  };
+}
+
+/** Per-user daily limits on the shared API quota. Read on each call, so a change in the environment applies at once. */
+export function dailyLimits(env = process.env) {
+  return {
+    questions: Number(env.DAILY_QUESTION_LIMIT) || 100,
+    chunks: Number(env.DAILY_CHUNK_LIMIT) || 2000,
   };
 }
 

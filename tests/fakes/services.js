@@ -22,6 +22,7 @@ const cosine = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
 
 export function createFakeServices() {
   const files = new Map(); // url -> [{ pageContent, page }]
+  const hashes = new Map(); // url -> content hash; defaults to the url, so files differ unless a test says otherwise
   const storedKeys = new Set();
   const vectors = new Map(); // id -> { values, metadata }
   const state = {
@@ -90,7 +91,7 @@ export function createFakeServices() {
         if (state.failLoader) throw new Error("The stored file could not be downloaded (status 500).");
         if (!isSupportedName(name)) throw new UnsupportedFileTypeError();
         if (!files.has(url)) throw new Error("The stored file could not be downloaded (status 404).");
-        return files.get(url);
+        return { pages: files.get(url), hash: hashes.get(url) || url };
       },
     },
 
@@ -118,8 +119,9 @@ export function createFakeServices() {
   services.rag = createRag(services);
 
   /** Registers a stored file so the loader can "download" it. */
-  services.addFile = ({ url, key, pages }) => {
+  services.addFile = ({ url, key, pages, hash }) => {
     files.set(url, pages);
+    if (hash) hashes.set(url, hash);
     storedKeys.add(key);
   };
   return services;

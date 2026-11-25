@@ -3,16 +3,21 @@ import Message from "../models/message.models.js";
 import { assertObjectId, findOwnedProject } from "../middleware/auth.js";
 import { HttpError } from "../utils/httpError.js";
 import { log, safeError } from "../utils/log.js";
-import { NOT_FOUND_TEXT } from "../services/rag.js";
+import { dailyLimits } from "../config/env.js";
+import { NOT_FOUND_TEXT, citedLabels } from "../services/rag.js";
+import { takeUsage } from "../services/usage.js";
 
 const MAX_QUESTION = 4000;
 const ANSWER_IDLE_MS = 45000;
+const HISTORY_MESSAGES = 6;
+const HISTORY_CHARS = 1000;
+const DEFAULT_TITLE = /^Conversation \d+$/;
 
 // The message the user sees. It names a usage limit or a stall, and hides every other detail of the failure.
 function answerErrorText(err) {
   const text = String(err?.message || "");
   if (/AnswerStalled/.test(text)) return "The answer service did not respond in time. Try again in a moment.";
-  if (/\b429\b|quota|rate limit|RESOURCE_EXHAUSTED/i.test(text)) {
+  if (/\b429\b|quota|rate limit|RESOURCE_EXHAUSTED|daily limit/i.test(text)) {
     return "The answer service has reached its usage limit. Try again later.";
   }
   return "The answer could not be completed.";
@@ -63,9 +68,22 @@ export const createChatMessage = async (req, res) => {
   const question = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!question) throw new HttpError(400, "Message content is required.");
   if (question.length > MAX_QUESTION) throw new HttpError(400, `Message content is limited to ${MAX_QUESTION} characters.`);
+  if (!(await takeUsage(req.localUser._id, "questions", 1, dailyLimits().questions))) {
+    throw new HttpError(429, "You reached today's question limit. Try again tomorrow.");
+  }
 
   const { rag } = req.app.locals.services;
+  // The last few turns, oldest first, so a follow-up such as "and for digital items?" keeps its meaning.
+  const history = (await Message.find({ chat: chat._id }).sort({ createdAt: -1 }).limit(HISTORY_MESSAGES))
+    .reverse()
+    .filter((m) => m.content)
+    .map((m) => ({ role: m.role, content: m.content.slice(0, HISTORY_CHARS) }));
+  const previousQuestion = history.filter((m) => m.role === "user").pop()?.content;
+
   await Message.create({ chat: chat._id, role: "user", content: question });
+  if (history.length === 0 && DEFAULT_TITLE.test(chat.title)) {
+    await Chat.updateOne({ _id: chat._id }, { $set: { title: question.slice(0, 60) } });
+  }
 
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream");
@@ -107,12 +125,17 @@ export const createChatMessage = async (req, res) => {
   const startedAt = Date.now();
   let answer = "";
   let sources = [];
+  // Only the sources the answer cites are shown and stored.
+  const usedSources = () => {
+    const cited = citedLabels(answer);
+    return sources.filter((s) => cited.has(s.label));
+  };
   try {
     resetIdle();
     send({ status: "retrieving" });
     const retrieved = await Promise.race([
       rag.retrieveContext({
-        query: question,
+        query: previousQuestion ? `${previousQuestion}\n${question}` : question,
         ownerId: req.localUser._id,
         projectId: project._id,
       }),
@@ -128,7 +151,7 @@ export const createChatMessage = async (req, res) => {
       answer = NOT_FOUND_TEXT;
       send({ chunk: answer });
     } else {
-      for await (const piece of rag.streamAnswer({ context: retrieved.context, question, signal: controller.signal })) {
+      for await (const piece of rag.streamAnswer({ context: retrieved.context, question, history, signal: controller.signal })) {
         if (clientLeft) break;
         resetIdle();
         if (!answer) log.info("chat first token", { chatId: String(chat._id), ms: Date.now() - startedAt });
@@ -140,18 +163,19 @@ export const createChatMessage = async (req, res) => {
     clearTimeout(idleTimer);
     if (stalled) throw new Error("AnswerStalled");
     if (clientLeft) {
-      await Message.create({ chat: chat._id, role: "assistant", content: answer, sources, incomplete: true });
+      await Message.create({ chat: chat._id, role: "assistant", content: answer, sources: usedSources(), incomplete: true });
       return;
     }
-    send({ sources });
-    await Message.create({ chat: chat._id, role: "assistant", content: answer, sources, incomplete: false });
+    const used = usedSources();
+    send({ sources: used });
+    await Message.create({ chat: chat._id, role: "assistant", content: answer, sources: used, incomplete: false });
     send({ done: true });
     res.end();
   } catch (err) {
     clearTimeout(idleTimer);
     log.error("chat answer failed", { chatId: String(chat._id), ...safeError(err) });
     try {
-      await Message.create({ chat: chat._id, role: "assistant", content: answer, sources, incomplete: true });
+      await Message.create({ chat: chat._id, role: "assistant", content: answer, sources: usedSources(), incomplete: true });
     } catch {
       // the error event below still tells the client
     }
