@@ -5,7 +5,7 @@ import { HttpError } from "../utils/httpError.js";
 import { log, safeError } from "../utils/log.js";
 import { dailyLimits } from "../config/env.js";
 import { NOT_FOUND_TEXT, citedLabels } from "../services/rag.js";
-import { takeUsage } from "../services/usage.js";
+import { takeModelCall, refundUsage, SHARED_USER } from "../services/usage.js";
 
 const MAX_QUESTION = 4000;
 const ANSWER_IDLE_MS = 45000;
@@ -68,9 +68,8 @@ export const createChatMessage = async (req, res) => {
   const question = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!question) throw new HttpError(400, "Message content is required.");
   if (question.length > MAX_QUESTION) throw new HttpError(400, `Message content is limited to ${MAX_QUESTION} characters.`);
-  if (!(await takeUsage(req.localUser._id, "questions", 1, dailyLimits().questions))) {
-    throw new HttpError(429, "You reached today's question limit. Try again tomorrow.");
-  }
+  const refused = await takeModelCall(req.localUser._id, dailyLimits());
+  if (refused) throw new HttpError(429, refused);
 
   const { rag } = req.app.locals.services;
   // The last few turns, oldest first, so a follow-up such as "and for digital items?" keeps its meaning.
@@ -125,6 +124,10 @@ export const createChatMessage = async (req, res) => {
   const startedAt = Date.now();
   let answer = "";
   let sources = [];
+  let modelCalled = false;
+  let retrievedNothing = false;
+  // The shared limit counts model calls, so it is given back when the model was never asked.
+  const releaseSharedCall = () => (modelCalled ? null : refundUsage(SHARED_USER, "answers", 1).catch(() => {}));
   // Only the sources the answer cites are shown and stored.
   const usedSources = () => {
     const cited = citedLabels(answer);
@@ -149,8 +152,11 @@ export const createChatMessage = async (req, res) => {
     if (sources.length === 0) {
       // Nothing in the project matches, so the model is not asked to answer from an empty context.
       answer = NOT_FOUND_TEXT;
+      retrievedNothing = true;
+      await releaseSharedCall();
       send({ chunk: answer });
     } else {
+      modelCalled = true;
       for await (const piece of rag.streamAnswer({ context: retrieved.context, question, history, signal: controller.signal })) {
         if (clientLeft) break;
         resetIdle();
@@ -174,6 +180,8 @@ export const createChatMessage = async (req, res) => {
   } catch (err) {
     clearTimeout(idleTimer);
     log.error("chat answer failed", { chatId: String(chat._id), ...safeError(err) });
+    // With no sources the call was already given back above.
+    if (!retrievedNothing) await releaseSharedCall();
     try {
       await Message.create({ chat: chat._id, role: "assistant", content: answer, sources: usedSources(), incomplete: true });
     } catch {

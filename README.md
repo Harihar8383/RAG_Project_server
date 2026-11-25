@@ -13,8 +13,13 @@ Express API for Second Brain (the Verix interface). It stores projects, document
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DAILY_QUESTION_LIMIT` | 100 | Questions per user per UTC day. More get a 429 reply |
-| `DAILY_CHUNK_LIMIT` | 2000 | Chunks one user may embed per UTC day |
+| `DAILY_QUESTION_LIMIT` | 100 | Questions and new quizzes per user per day. More get a 429 reply |
+| `DAILY_SHARED_ANSWER_LIMIT` | 450 | Answers and quizzes of all users together per day. Set it below your real model limit. Hidden retries are not counted |
+| `DAILY_CHUNK_LIMIT` | 2000 | Chunks one user may embed per day |
+| `DAILY_MAP_ITEM_LIMIT` | 200 | Exam Map topics per user per day |
+| `EXAM_MAP_MIN_SCORE` | 0.65 | Similarity needed for an Exam Map match. A starting guess: tune it with your own labelled topics |
+
+A day starts at midnight Pacific time, like Google's daily quota.
 | `EMBEDDING_TOKENS_PER_MINUTE` | 30000 | Document batches are paced to stay under this. Set it to your real limit from AI Studio |
 
 A file may have at most 2000 chunks. Files are indexed one at a time. On the free Gemini tier, Google may use and review what is sent, so do not upload sensitive files there, and use the paid tier before you offer the app in the EEA, Switzerland or the UK.
@@ -30,6 +35,9 @@ All routes except `/api/health` need a Clerk session token in the `Authorization
 | `GET /api/projects/:projectId/documents` | List documents with `status`, `failureReason` and `chunkCount` |
 | `DELETE /api/projects/:projectId/documents/:documentId` | Delete the vectors, the stored file and the record |
 | `POST /api/projects/:projectId/documents/:documentId/retry` | Index a failed document again |
+| `GET`, `POST /api/projects/:projectId/exam-map` | Read the latest Exam Map, or make one from `{ text }` (up to 50 lines). Uses embeddings only |
+| `PATCH /api/projects/:projectId/exam-map/:mapId/items/:itemId` | Correct a label: `{ label: "strong" \| "check" \| "none" \| null }` |
+| `POST /api/projects/:projectId/documents/:documentId/quiz` | Five-question quiz for a ready file. One model call, then saved |
 | `GET`, `POST /api/projects/:projectId/chats` | List and create conversations |
 | `DELETE /api/projects/:projectId/chats/:chatId` | Delete a conversation and its messages |
 | `GET /api/projects/:projectId/chats/:chatId/messages` | Stored history, including sources |

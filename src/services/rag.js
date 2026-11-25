@@ -3,6 +3,7 @@ import Document from "../models/document.models.js";
 import Project from "../models/project.models.js";
 import Chat from "../models/chat.models.js";
 import Message from "../models/message.models.js";
+import ExamMap from "../models/examMap.models.js";
 import { HttpError } from "../utils/httpError.js";
 import { log, safeError } from "../utils/log.js";
 import { dailyLimits } from "../config/env.js";
@@ -199,14 +200,13 @@ export function createRag(services, { splitter } = {}) {
     return result.modifiedCount ?? result.matchedCount ?? 0;
   }
 
-  /** Retrieves the top chunks of one project and labels them S1 to S5. The filter is built from server data only. */
-  async function retrieveContext({ query, ownerId, projectId }) {
+  /** The nearest chunks of one project's indexed files. The filter is built from server data only. */
+  async function search({ vector, ownerId, projectId, limit = TOP_K }) {
     const owner = String(ownerId);
     const project = String(projectId);
-    const vector = await services.embeddings.embedQuery(query);
     const matches = await services.vectorStore.query({
       vector,
-      topK: TOP_K * 2,
+      topK: limit * 2,
       filter: { ownerId: { $eq: owner }, projectId: { $eq: project } },
     });
     // Defence in depth: drop any match that does not carry the same owner and project.
@@ -216,7 +216,13 @@ export function createRag(services, { splitter } = {}) {
     const live = ids.length
       ? new Set((await Document.find({ _id: { $in: ids }, project, status: "indexed" })).map((d) => String(d._id)))
       : new Set();
-    const kept = safe.filter((m) => live.has(m.metadata.documentId)).slice(0, TOP_K);
+    return safe.filter((m) => live.has(m.metadata.documentId)).slice(0, limit);
+  }
+
+  /** Retrieves the top chunks of one project for a question and labels them S1 to S5. */
+  async function retrieveContext({ query, ownerId, projectId }) {
+    const vector = await services.embeddings.embedQuery(query);
+    const kept = await search({ vector, ownerId, projectId });
     const sources = kept.map((m, i) => ({
       label: `S${i + 1}`,
       fileName: m.metadata.fileName,
@@ -262,9 +268,20 @@ export function createRag(services, { splitter } = {}) {
 
   // Old answers keep the file name and page of a source, but must not keep the text of a deleted file.
   async function forgetPassages(doc) {
+    const documentId = String(doc._id);
+    // documentId is unset last, because it is what selects the items.
+    await ExamMap.updateMany(
+      { project: doc.project, "items.documentId": documentId },
+      {
+        $set: { "items.$[hit].label": "none", "items.$[hit].matched": [] },
+        $unset: Object.fromEntries(
+          ["override", "passage", "fileName", "page", "documentId"].map((field) => [`items.$[hit].${field}`, ""])
+        ),
+      },
+      { arrayFilters: [{ "hit.documentId": documentId }] }
+    );
     const chats = await Chat.find({ project: doc.project });
     if (!chats.length) return;
-    const documentId = String(doc._id);
     await Message.updateMany(
       { chat: { $in: chats.map((c) => c._id) }, "sources.documentId": documentId },
       { $unset: { "sources.$[hit].text": "" } },
@@ -286,6 +303,7 @@ export function createRag(services, { splitter } = {}) {
     if (chatIds.length) await Message.deleteMany({ chat: { $in: chatIds } });
     await Chat.deleteMany({ project: project._id });
     await Document.deleteMany({ project: project._id });
+    await ExamMap.deleteMany({ project: project._id });
     await Project.deleteOne({ _id: project._id });
   }
 
@@ -294,5 +312,5 @@ export function createRag(services, { splitter } = {}) {
     await Chat.deleteOne({ _id: chat._id });
   }
 
-  return { processDocument, enqueue, failInterrupted, retrieveContext, streamAnswer, deleteDocument, deleteProject, deleteChat };
+  return { processDocument, enqueue, failInterrupted, search, retrieveContext, streamAnswer, deleteDocument, deleteProject, deleteChat };
 }

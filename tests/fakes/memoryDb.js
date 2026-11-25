@@ -6,8 +6,9 @@ import Document from "../../src/models/document.models.js";
 import Chat from "../../src/models/chat.models.js";
 import Message from "../../src/models/message.models.js";
 import Usage from "../../src/models/usage.models.js";
+import ExamMap from "../../src/models/examMap.models.js";
 
-const models = { User, Project, Document, Chat, Message, Usage };
+const models = { User, Project, Document, Chat, Message, Usage, ExamMap };
 const tables = {};
 let seq = 0;
 const objectId = () => (++seq).toString(16).padStart(24, "0");

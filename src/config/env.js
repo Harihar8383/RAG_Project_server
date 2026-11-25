@@ -39,8 +39,13 @@ export function dailyLimits(env = process.env) {
   return {
     questions: Number(env.DAILY_QUESTION_LIMIT) || 100,
     chunks: Number(env.DAILY_CHUNK_LIMIT) || 2000,
+    mapItems: Number(env.DAILY_MAP_ITEM_LIMIT) || 200,
+    sharedAnswers: Number(env.DAILY_SHARED_ANSWER_LIMIT) || 450,
   };
 }
+
+/** The similarity an Exam Map passage needs. The default is a starting guess: tune it with real notes. */
+export const examMapMinScore = (env = process.env) => Number(env.EXAM_MAP_MIN_SCORE) || 0.65;
 
 /** Names of the required variables that are missing, so a start-up error can list them without printing values. */
 export function missingEnv(env = process.env) {

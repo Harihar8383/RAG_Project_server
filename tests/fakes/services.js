@@ -1,5 +1,6 @@
 // Fake outside services for offline tests. They have the same interface as the real adapters in src/services.
 import { createRag } from "../../src/services/rag.js";
+import { createQuizMaker } from "../../src/services/quiz.js";
 import { UnsupportedFileTypeError, isSupportedName } from "../../src/services/loader.js";
 
 const DIM = 64;
@@ -37,6 +38,7 @@ export function createFakeServices() {
     llmHang: false, // the model never answers
     embedHang: false, // the embedding service never answers
     embedCalls: 0,
+    queryBatches: [], // sizes of the Exam Map embedding requests
     llmPrompts: [],
     deletedKeys: [],
   };
@@ -52,6 +54,11 @@ export function createFakeServices() {
       async embedDocuments(texts) {
         state.embedCalls += 1;
         if (state.failEmbeddings) throw new Error("embedding request failed https://secret.example/key=abc");
+        return texts.map(embedText);
+      },
+      async embedQueries(texts) {
+        state.queryBatches.push(texts.length);
+        if (state.failEmbeddings) throw new Error("The embedding service answered with status 500.");
         return texts.map(embedText);
       },
       async embedQuery(text) {
@@ -117,6 +124,7 @@ export function createFakeServices() {
     },
   };
   services.rag = createRag(services);
+  services.quiz = createQuizMaker(services);
 
   /** Registers a stored file so the loader can "download" it. */
   services.addFile = ({ url, key, pages, hash }) => {

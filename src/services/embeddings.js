@@ -97,6 +97,8 @@ export function createGeminiEmbeddings({
   return {
     dimensions,
     embedDocuments: (texts) => embedAll(texts, "RETRIEVAL_DOCUMENT", true),
+    // Several search texts in one request, for the Exam Map. The user is waiting, so they are not held back.
+    embedQueries: (texts) => embedAll(texts, "RETRIEVAL_QUERY", false),
     // A question is counted but never held back, because the user is waiting for the answer.
     embedQuery: async (text) => (await embedAll([text], "RETRIEVAL_QUERY", false))[0],
   };

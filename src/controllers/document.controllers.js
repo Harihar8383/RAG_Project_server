@@ -13,9 +13,16 @@ async function findOwnedDocument(req) {
 // The storage URL opens the file without a login, so it and the storage key stay on the server.
 function publicDocument(doc) {
   // eslint-disable-next-line no-unused-vars
-  const { url, key, contentHash, ...rest } = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  const { url, key, contentHash, quiz, ...rest } = typeof doc.toObject === "function" ? doc.toObject() : doc;
   return rest;
 }
+
+// @route POST /api/projects/:projectId/documents/:documentId/quiz
+export const makeQuiz = async (req, res) => {
+  const doc = await findOwnedDocument(req);
+  if (doc.status !== "indexed") throw new HttpError(409, "Wait until the file is Ready.");
+  res.status(200).json(await req.app.locals.services.quiz.get(doc, req.localUser._id));
+};
 
 // @route GET /api/projects/:projectId/documents
 export const getProjectDocuments = async (req, res) => {

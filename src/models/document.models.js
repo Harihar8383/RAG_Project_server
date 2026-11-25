@@ -46,6 +46,10 @@ const documentSchema = new mongoose.Schema(
     contentHash: {
       type: String,
     },
+    // The saved quiz: { questions, readChars, totalChars }. It is deleted with the record.
+    quiz: {
+      type: mongoose.Schema.Types.Mixed,
+    },
   },
   { timestamps: true }
 );

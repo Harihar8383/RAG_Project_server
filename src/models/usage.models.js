@@ -7,6 +7,8 @@ const usageSchema = new mongoose.Schema(
     day: { type: String, required: true }, // YYYY-MM-DD
     questions: { type: Number, default: 0 },
     chunks: { type: Number, default: 0 },
+    mapItems: { type: Number, default: 0 },
+    answers: { type: Number, default: 0 }, // used by the shared row only
   },
   { timestamps: true }
 );

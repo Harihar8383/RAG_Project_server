@@ -6,6 +6,7 @@ import { createUploadThingFileStore } from "./fileStore.js";
 import { createDocumentLoader } from "./loader.js";
 import { createClerkIdentity } from "./identity.js";
 import { createRag } from "./rag.js";
+import { createQuizMaker } from "./quiz.js";
 
 /** Builds the real adapters. Tests build the same shape from in-memory fakes. */
 export function createServices(env = process.env) {
@@ -28,5 +29,6 @@ export function createServices(env = process.env) {
     identity: createClerkIdentity(),
   };
   services.rag = createRag(services);
+  services.quiz = createQuizMaker(services);
   return services;
 }
