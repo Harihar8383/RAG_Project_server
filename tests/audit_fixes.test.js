@@ -216,6 +216,24 @@ test("A17 A question does not wait through a long retry delay", async () => {
   assert.equal(calls.length, 1);
 });
 
+test("A18 Deleting a file removes its passage text from old answers and keeps the others", async () => {
+  const p = await project();
+  const docs = [];
+  for (const [name, text] of [["a.txt", "Apples are red."], ["b.txt", "Bananas are yellow."]]) {
+    const d = await h.addDocument({ user: "user_a", projectId: p._id, name, pages: [PAGE(text)] });
+    await h.services.rag.processDocument(d._id);
+    docs.push(d);
+  }
+  h.services.state.llmAnswer = "Both [S1, S2].";
+  const c = await chat(p);
+  await h.ask("user_a", p._id, c._id, "What colours?");
+  await h.json("DELETE", `/api/projects/${p._id}/documents/${docs[0]._id}`, "user_a");
+  const history = await h.json("GET", `/api/projects/${p._id}/chats/${c._id}/messages`, "user_a");
+  const byFile = Object.fromEntries(history.body[1].sources.map((s) => [s.fileName, s.text]));
+  assert.equal(byFile["a.txt"], undefined);
+  assert.equal(byFile["b.txt"], "Bananas are yellow.");
+});
+
 // Embeddings with a fake fetch, clock and sleep.
 function fakeGemini(responses) {
   let t = 0;

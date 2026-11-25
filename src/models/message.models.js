@@ -6,6 +6,7 @@ const sourceSchema = new mongoose.Schema(
     fileName: { type: String },
     page: { type: Number },
     text: { type: String }, // the cited passage, shown when the user opens the source
+    documentId: { type: String }, // used to remove the passage when its file is deleted
   },
   { _id: false }
 );

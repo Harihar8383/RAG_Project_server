@@ -222,6 +222,7 @@ export function createRag(services, { splitter } = {}) {
       fileName: m.metadata.fileName,
       page: m.metadata.page ?? null,
       text: m.metadata.text,
+      documentId: m.metadata.documentId,
     }));
     const context = kept
       .map((m, i) => {
@@ -259,8 +260,21 @@ export function createRag(services, { splitter } = {}) {
     await removeDocumentResources(stopped || doc);
   }
 
+  // Old answers keep the file name and page of a source, but must not keep the text of a deleted file.
+  async function forgetPassages(doc) {
+    const chats = await Chat.find({ project: doc.project });
+    if (!chats.length) return;
+    const documentId = String(doc._id);
+    await Message.updateMany(
+      { chat: { $in: chats.map((c) => c._id) }, "sources.documentId": documentId },
+      { $unset: { "sources.$[hit].text": "" } },
+      { arrayFilters: [{ "hit.documentId": documentId }] }
+    );
+  }
+
   async function deleteDocument(doc) {
     await stopAndRemove(doc);
+    await forgetPassages(doc);
     await Document.deleteOne({ _id: doc._id });
   }
 

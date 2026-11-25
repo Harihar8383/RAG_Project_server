@@ -192,9 +192,10 @@ test("C02 [FR-07, FR-08] A question streams retrieving, generating, chunks, sour
   assert.ok(kinds.includes("chunk"));
   assert.deepEqual(kinds.slice(-2), ["sources", "done"]);
   const sources = events.find((e) => e.sources).sources;
-  assert.deepEqual(sources, [
+  assert.deepEqual(sources.map(({ documentId, ...rest }) => rest), [
     { label: "S1", fileName: "terms.pdf", page: 1, text: "Users must be at least thirteen years old to use the services." },
   ]);
+  assert.ok(sources[0].documentId);
 
   const history = await h.json("GET", `/api/projects/${p._id}/chats/${c._id}/messages`, "user_a");
   assert.deepEqual(history.body.map((m) => m.role), ["user", "assistant"]);
