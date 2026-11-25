@@ -280,6 +280,16 @@ test("C06d [FR-09] A usage-limit failure tells the user so, without exposing the
   assert.ok(!/AIza|429|quota/.test(message), "the provider text stays on the server");
 });
 
+test("A plain 429 response is classified as a usage-limit failure", async () => {
+  const p = await project("user_a");
+  await indexed("user_a", p._id, "a.txt", [PAGE("alpha beta gamma delta")]);
+  const c = await chat("user_a", p._id);
+  h.services.state.llmFailAfter = 0;
+  h.services.state.llmFailMessage = "429 Too Many Requests";
+  const { events } = await h.ask("user_a", p._id, c._id, "alpha beta?");
+  assert.match(events.find((e) => e.error).error, /usage limit/);
+});
+
 test("C06b [FR-09] A model that stops answering ends with an error event and an incomplete message", async () => {
   const p = await project("user_a");
   await indexed("user_a", p._id, "a.txt", [PAGE("alpha beta gamma delta")]);

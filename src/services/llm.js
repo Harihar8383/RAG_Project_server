@@ -1,13 +1,13 @@
 // The generation model. A LangChain chain of the chat model and a string output parser streams plain text pieces.
 
-export function createGeminiLlm({ apiKey, model = "gemini-2.5-flash" }) {
+export function createGeminiLlm({ apiKey, model = "gemini-3.1-flash-lite" }) {
   let chain;
 
   async function getChain() {
     if (!chain) {
       const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
       const { StringOutputParser } = await import("@langchain/core/output_parsers");
-      chain = new ChatGoogleGenerativeAI({ model, apiKey, temperature: 0.2, streaming: true, maxRetries: 1 }).pipe(
+      chain = new ChatGoogleGenerativeAI({ model, apiKey, temperature: 0.2, streaming: true, maxRetries: 2 }).pipe(
         new StringOutputParser()
       );
     }

@@ -156,7 +156,7 @@ test("T22 Configuration lists missing variables by name and defaults to 768 dime
   const config = readConfig({});
   assert.equal(config.embeddingDimensions, 768);
   assert.equal(config.pineconeIndex, "rag-documents");
-  assert.equal(config.chatModel, "gemini-2.5-flash");
+  assert.equal(config.chatModel, "gemini-3.1-flash-lite");
 });
 
 test("T23 Log helpers remove URLs and truncate error messages", () => {

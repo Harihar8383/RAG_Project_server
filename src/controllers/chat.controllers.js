@@ -12,7 +12,7 @@ const ANSWER_IDLE_MS = 45000;
 function answerErrorText(err) {
   const text = String(err?.message || "");
   if (/AnswerStalled/.test(text)) return "The answer service did not respond in time. Try again in a moment.";
-  if (/429|quota|rate limit|RESOURCE_EXHAUSTED/i.test(text)) {
+  if (/\b429\b|quota|rate limit|RESOURCE_EXHAUSTED/i.test(text)) {
     return "The answer service has reached its usage limit. Try again later.";
   }
   return "The answer could not be completed.";

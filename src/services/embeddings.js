@@ -24,12 +24,20 @@ export function createGeminiEmbeddings({
       taskType,
       outputDimensionality: dimensions,
     }));
-    const res = await fetchImpl(`${BASE_URL}/models/${model}:batchEmbedContents`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({ requests }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    let res;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetchImpl(`${BASE_URL}/models/${model}:batchEmbedContents`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({ requests }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if ((res.status === 429 || res.status === 503) && attempt < 2) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 1500));
+        continue;
+      }
+      break;
+    }
     if (!res.ok) throw new Error(`The embedding service answered with status ${res.status}.`);
     const json = await res.json();
     if (!Array.isArray(json.embeddings) || json.embeddings.length !== texts.length) {

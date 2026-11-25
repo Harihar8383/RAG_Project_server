@@ -3,6 +3,10 @@ import dotenv from "dotenv";
 // Load the .env file before any other module reads process.env.
 dotenv.config();
 
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = "development";
+}
+
 export const REQUIRED_FOR_RUNTIME = [
   "MONGO_URI",
   "CLERK_PUBLISHABLE_KEY",
@@ -20,7 +24,7 @@ export function readConfig(env = process.env) {
     googleApiKey: env.GOOGLE_API_KEY,
     embeddingModel: env.EMBEDDING_MODEL || "gemini-embedding-001",
     embeddingDimensions: Number(env.EMBEDDING_DIMENSIONS) || 768,
-    chatModel: env.CHAT_MODEL || "gemini-2.5-flash",
+    chatModel: env.CHAT_MODEL || "gemini-3.1-flash-lite",
     pineconeApiKey: env.PINECONE_API_KEY,
     pineconeIndex: env.PINECONE_INDEX || "rag-documents",
     pineconeIndexHost: env.INDEX_HOST_URL,

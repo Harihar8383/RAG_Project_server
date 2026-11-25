@@ -25,7 +25,13 @@ export function createApp({ services, clientUrl = "http://localhost:5173", sessi
 
   // UploadThing route handler, which validates the Clerk session in the upload middleware
   if (mountUploads) {
-    app.use("/api/uploadthing", createRouteHandler({ router: createUploadRouter(services) }));
+    app.use(
+      "/api/uploadthing",
+      createRouteHandler({
+        router: createUploadRouter(services),
+        config: { isDev: process.env.NODE_ENV !== "production" },
+      })
+    );
   }
   app.use("/api/projects/:projectId/documents", documentRoutes);
   app.use("/api/projects/:projectId/chats", chatRoutes);
