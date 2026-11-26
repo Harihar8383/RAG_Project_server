@@ -1,5 +1,6 @@
 // Fake outside services for offline tests. They have the same interface as the real adapters in src/services.
 import { createRag } from "../../src/services/rag.js";
+import { createQuizMaker } from "../../src/services/quiz.js";
 import { UnsupportedFileTypeError, isSupportedName } from "../../src/services/loader.js";
 
 const DIM = 64;
@@ -22,6 +23,7 @@ const cosine = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
 
 export function createFakeServices() {
   const files = new Map(); // url -> [{ pageContent, page }]
+  const hashes = new Map(); // url -> content hash; defaults to the url, so files differ unless a test says otherwise
   const storedKeys = new Set();
   const vectors = new Map(); // id -> { values, metadata }
   const state = {
@@ -36,6 +38,7 @@ export function createFakeServices() {
     llmHang: false, // the model never answers
     embedHang: false, // the embedding service never answers
     embedCalls: 0,
+    queryBatches: [], // sizes of the Exam Map embedding requests
     llmPrompts: [],
     deletedKeys: [],
   };
@@ -51,6 +54,11 @@ export function createFakeServices() {
       async embedDocuments(texts) {
         state.embedCalls += 1;
         if (state.failEmbeddings) throw new Error("embedding request failed https://secret.example/key=abc");
+        return texts.map(embedText);
+      },
+      async embedQueries(texts) {
+        state.queryBatches.push(texts.length);
+        if (state.failEmbeddings) throw new Error("The embedding service answered with status 500.");
         return texts.map(embedText);
       },
       async embedQuery(text) {
@@ -90,7 +98,7 @@ export function createFakeServices() {
         if (state.failLoader) throw new Error("The stored file could not be downloaded (status 500).");
         if (!isSupportedName(name)) throw new UnsupportedFileTypeError();
         if (!files.has(url)) throw new Error("The stored file could not be downloaded (status 404).");
-        return files.get(url);
+        return { pages: files.get(url), hash: hashes.get(url) || url };
       },
     },
 
@@ -116,10 +124,12 @@ export function createFakeServices() {
     },
   };
   services.rag = createRag(services);
+  services.quiz = createQuizMaker(services);
 
   /** Registers a stored file so the loader can "download" it. */
-  services.addFile = ({ url, key, pages }) => {
+  services.addFile = ({ url, key, pages, hash }) => {
     files.set(url, pages);
+    if (hash) hashes.set(url, hash);
     storedKeys.add(key);
   };
   return services;

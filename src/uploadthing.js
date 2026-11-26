@@ -6,6 +6,7 @@ import Document from "./models/document.models.js";
 import Project from "./models/project.models.js";
 import { ensureUser, isObjectId } from "./middleware/auth.js";
 import { log, safeError } from "./utils/log.js";
+import { isSupportedName } from "./services/loader.js";
 
 const f = createUploadthing();
 
@@ -14,7 +15,7 @@ const f = createUploadthing();
  * project that belongs to the signed-in user. Indexing starts in the background after the record is saved.
  */
 export function createUploadRouter(services) {
-  const authMiddleware = async ({ req, input }) => {
+  const authMiddleware = async ({ req, input, files }) => {
     let userId = null;
     try {
       userId = getAuth(req)?.userId || null;
@@ -23,6 +24,10 @@ export function createUploadRouter(services) {
     }
     if (!userId) throw new UploadThingError("Unauthorized");
     if (!isObjectId(input.projectId)) throw new UploadThingError("Invalid project id");
+    // The "text" type also lets through .md, .html and others, which could only fail later.
+    if (files?.some((file) => !isSupportedName(file.name))) {
+      throw new UploadThingError("Only PDF, DOCX, TXT and CSV files are accepted");
+    }
 
     const user = await ensureUser(userId, services);
     const project = await Project.findOne({ _id: input.projectId, user: user._id });
@@ -52,7 +57,7 @@ export function createUploadRouter(services) {
       throw new UploadThingError("The document could not be saved.");
     }
     log.info("document uploaded", { documentId: String(doc._id) });
-    setImmediate(() => services.rag.processDocument(doc._id).catch(() => {}));
+    services.rag.enqueue(doc._id);
     return { documentId: String(doc._id) };
   };
 

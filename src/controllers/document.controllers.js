@@ -10,11 +10,25 @@ async function findOwnedDocument(req) {
   return doc;
 }
 
+// The storage URL opens the file without a login, so it and the storage key stay on the server.
+function publicDocument(doc) {
+  // eslint-disable-next-line no-unused-vars
+  const { url, key, contentHash, quiz, ...rest } = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  return rest;
+}
+
+// @route POST /api/projects/:projectId/documents/:documentId/quiz
+export const makeQuiz = async (req, res) => {
+  const doc = await findOwnedDocument(req);
+  if (doc.status !== "indexed") throw new HttpError(409, "Wait until the file is Ready.");
+  res.status(200).json(await req.app.locals.services.quiz.get(doc, req.localUser._id));
+};
+
 // @route GET /api/projects/:projectId/documents
 export const getProjectDocuments = async (req, res) => {
   const project = await findOwnedProject(req);
   const documents = await Document.find({ project: project._id }).sort({ createdAt: -1 });
-  res.status(200).json(documents);
+  res.status(200).json(documents.map(publicDocument));
 };
 
 // @route DELETE /api/projects/:projectId/documents/:documentId
@@ -26,11 +40,14 @@ export const deleteDocument = async (req, res) => {
 };
 
 // @route POST /api/projects/:projectId/documents/:documentId/retry
-// Starts processing again for a document that failed. A retry replaces earlier vectors and creates no duplicates.
+// Queues a failed document again. The status change is atomic, so two quick clicks start only one job.
 export const retryDocument = async (req, res) => {
   const doc = await findOwnedDocument(req);
-  if (doc.status === "processing") throw new HttpError(409, "The document is already being processed.");
-  const { rag } = req.app.locals.services;
-  setImmediate(() => rag.processDocument(doc._id).catch(() => {}));
+  const claimed = await Document.findOneAndUpdate(
+    { _id: doc._id, status: "failed" },
+    { $set: { status: "uploaded" }, $unset: { failureReason: "" } }
+  );
+  if (!claimed) throw new HttpError(409, "Only a document that failed can be retried.");
+  req.app.locals.services.rag.enqueue(doc._id);
   res.status(202).json({ message: "Processing started." });
 };

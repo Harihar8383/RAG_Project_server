@@ -37,9 +37,24 @@ const documentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Chunks already embedded and stored, so a retry resumes instead of starting again
+    indexedChunks: {
+      type: Number,
+      default: 0,
+    },
+    // SHA-256 of the file bytes, used to skip a file that is already in the project
+    contentHash: {
+      type: String,
+    },
+    // The saved quiz: { questions, readChars, totalChars }. It is deleted with the record.
+    quiz: {
+      type: mongoose.Schema.Types.Mixed,
+    },
   },
   { timestamps: true }
 );
+documentSchema.index({ project: 1, createdAt: -1 });
+documentSchema.index({ status: 1 });
 
 const Document = mongoose.model("Document", documentSchema);
 

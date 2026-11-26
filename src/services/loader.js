@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 export const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".csv", ".txt"];
 
@@ -12,7 +13,7 @@ export class UnsupportedFileTypeError extends Error {
 export const isSupportedName = (name) => SUPPORTED_EXTENSIONS.includes(path.extname(String(name || "")).toLowerCase());
 
 /**
- * Downloads a stored file and returns its text as [{ pageContent, page }].
+ * Downloads a stored file and returns { pages: [{ pageContent, page }], hash }. The hash is the SHA-256 of the bytes.
  * The PDF loader returns one entry per page. The other loaders return the whole text with page null.
  */
 export function createDocumentLoader({ fetchImpl = fetch } = {}) {
@@ -24,6 +25,7 @@ export function createDocumentLoader({ fetchImpl = fetch } = {}) {
       const res = await fetchImpl(url);
       if (!res.ok) throw new Error(`The stored file could not be downloaded (status ${res.status}).`);
       const blob = await res.blob();
+      const hash = createHash("sha256").update(new Uint8Array(await blob.arrayBuffer())).digest("hex");
 
       let docs;
       if (ext === ".pdf") {
@@ -34,14 +36,17 @@ export function createDocumentLoader({ fetchImpl = fetch } = {}) {
         docs = await new DocxLoader(blob).load();
       } else if (ext === ".csv") {
         const { CSVLoader } = await import("@langchain/community/document_loaders/fs/csv");
-        docs = await new CSVLoader(blob).load();
+        // One entry per row would make one chunk per row, so the rows are joined and split like any other text.
+        const rows = await new CSVLoader(blob).load();
+        docs = [{ pageContent: rows.map((r) => r.pageContent).join("\n\n"), metadata: {} }];
       } else {
         const { TextLoader } = await import("langchain/document_loaders/fs/text");
         docs = await new TextLoader(blob).load();
       }
-      return docs
+      const pages = docs
         .map((d) => ({ pageContent: d.pageContent, page: d.metadata?.loc?.pageNumber ?? null }))
         .filter((d) => d.pageContent && d.pageContent.trim());
+      return { pages, hash };
     },
   };
 }

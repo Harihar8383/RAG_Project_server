@@ -14,6 +14,7 @@ const projectSchema = new mongoose.Schema({
     required: true,
   }
 }, { timestamps: true });
+projectSchema.index({ user: 1, createdAt: -1 });
 
 const Project = mongoose.model('Project', projectSchema);
 

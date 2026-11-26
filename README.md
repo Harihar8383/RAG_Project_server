@@ -9,6 +9,23 @@ Express API for Second Brain (the Verix interface). It stores projects, document
 3. In Pinecone, create the index named in `PINECONE_INDEX` with 768 dimensions and the cosine metric.
 4. Run `npm run dev`. The server listens on `PORT` (default 8000). `GET /api/health` answers 200. On a local machine use `npm run dev`, which sets `NODE_ENV=development`. In that mode the server forwards the UploadThing completion callback itself. With `npm start` and no `NODE_ENV`, UploadThing tries to call `localhost` from its own servers and the document never leaves the queued state.
 
+### Quota settings (optional)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DAILY_QUESTION_LIMIT` | 100 | Questions and new quizzes per user per day. More get a 429 reply |
+| `DAILY_SHARED_ANSWER_LIMIT` | 450 | Answers and quizzes of all users together per day. Set it below your real model limit. Hidden retries are not counted |
+| `DAILY_CHUNK_LIMIT` | 2000 | Chunks one user may embed per day |
+| `DAILY_MAP_ITEM_LIMIT` | 200 | Exam Map topics per user per day |
+| `EXAM_MAP_MIN_SCORE` | 0.65 | Similarity that alone gives an Exam Map "Check this" when the topic's words are missing |
+| `EXAM_MAP_WORD_SCORE` | 0.6 | Similarity that gives a "Strong match" when the passage also has the topic's words (small typos allowed). In tests with Java notes, unrelated topics scored up to 0.59 and real topics 0.61 to 0.72 |
+| `CHAT_FALLBACK_MODELS` | `gemini-2.5-flash-lite,gemini-2.5-flash` | Models tried in order when `CHAT_MODEL` is overloaded (503) or out of quota (429) before it sends any text. A busy model is skipped for 60 seconds. Empty turns this off |
+| `EMBEDDING_TOKENS_PER_MINUTE` | 30000 | Document batches are paced to stay under this. Set it to your real limit from AI Studio |
+
+A day starts at midnight Pacific time, like Google's daily quota.
+
+A file may have at most 2000 chunks. Files are indexed one at a time. On the free Gemini tier, Google may use and review what is sent, so do not upload sensitive files there, and use the paid tier before you offer the app in the EEA, Switzerland or the UK.
+
 ## API
 
 All routes except `/api/health` need a Clerk session token in the `Authorization: Bearer` header. A missing or invalid token gets a 401 JSON reply.
@@ -20,6 +37,9 @@ All routes except `/api/health` need a Clerk session token in the `Authorization
 | `GET /api/projects/:projectId/documents` | List documents with `status`, `failureReason` and `chunkCount` |
 | `DELETE /api/projects/:projectId/documents/:documentId` | Delete the vectors, the stored file and the record |
 | `POST /api/projects/:projectId/documents/:documentId/retry` | Index a failed document again |
+| `GET`, `POST /api/projects/:projectId/exam-map` | Read the latest Exam Map, or make one from `{ text }` (up to 50 lines). Uses embeddings only |
+| `PATCH /api/projects/:projectId/exam-map/:mapId/items/:itemId` | Correct a label: `{ label: "strong" \| "check" \| "none" \| null }` |
+| `POST /api/projects/:projectId/documents/:documentId/quiz` | Five-question quiz for a ready file. One model call, then saved |
 | `GET`, `POST /api/projects/:projectId/chats` | List and create conversations |
 | `DELETE /api/projects/:projectId/chats/:chatId` | Delete a conversation and its messages |
 | `GET /api/projects/:projectId/chats/:chatId/messages` | Stored history, including sources |
@@ -30,7 +50,9 @@ The question stream sends `status` (`retrieving`, then `generating`), `chunk`, `
 
 ## Document states
 
-`uploaded`, then `processing`, then `indexed`. A failure sets `failed` with a short reason, and the retry route starts again. Chunk ids are `documentId:index`, so a retry replaces partial vectors and never duplicates them.
+`uploaded`, then `processing`, then `indexed`. A failure sets `failed` with a short reason, and only a failed document can be retried. Chunks are stored in batches of 100, and a retry resumes after the last stored batch. Chunk ids are `documentId:index`, so vectors are never duplicated. Only `indexed` documents can answer questions. When the server starts, documents left `uploaded` or `processing` by a stopped server become `failed` with "Indexing was interrupted". A file whose bytes are already in the project fails with "The same file is already in this project" and is not embedded again. The document list never returns the storage `url` or `key`.
+
+The server starts with a warning when `NODE_ENV` is not set. Set `NODE_ENV=production` on a live server.
 
 ## Tests
 

@@ -5,6 +5,8 @@ const sourceSchema = new mongoose.Schema(
     label: { type: String }, // S1 to S5
     fileName: { type: String },
     page: { type: Number },
+    text: { type: String }, // the cited passage, shown when the user opens the source
+    documentId: { type: String }, // used to remove the passage when its file is deleted
   },
   { _id: false }
 );
@@ -40,6 +42,7 @@ const messageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+messageSchema.index({ chat: 1, createdAt: 1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

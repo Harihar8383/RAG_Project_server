@@ -5,8 +5,10 @@ import Project from "../../src/models/project.models.js";
 import Document from "../../src/models/document.models.js";
 import Chat from "../../src/models/chat.models.js";
 import Message from "../../src/models/message.models.js";
+import Usage from "../../src/models/usage.models.js";
+import ExamMap from "../../src/models/examMap.models.js";
 
-const models = { User, Project, Document, Chat, Message };
+const models = { User, Project, Document, Chat, Message, Usage, ExamMap };
 const tables = {};
 let seq = 0;
 const objectId = () => (++seq).toString(16).padStart(24, "0");
@@ -15,6 +17,10 @@ const clock = () => new Date(Date.UTC(2026, 0, 1) + ++seq * 1000).toISOString();
 const same = (a, b) => String(a) === String(b);
 function matches(row, filter = {}) {
   return Object.entries(filter).every(([key, cond]) => {
+    if (key.includes(".")) {
+      const [list, field] = key.split(".");
+      return (row[list] || []).some((item) => matches(item, { [field]: cond }));
+    }
     if (cond && typeof cond === "object" && !Array.isArray(cond)) {
       if ("$in" in cond) return cond.$in.some((v) => same(v, row[key]));
       if ("$eq" in cond) return same(cond.$eq, row[key]);
@@ -31,6 +37,10 @@ function query(rows) {
     sort(spec) {
       const [[field, dir]] = Object.entries(spec);
       list = [...list].sort((a, b) => (a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0) * (dir < 0 ? -1 : 1));
+      return q;
+    },
+    limit(n) {
+      list = list.slice(0, n);
       return q;
     },
     then: (resolve, reject) => Promise.resolve(list.map(clone)).then(resolve, reject),
@@ -63,13 +73,47 @@ for (const [name, Model] of Object.entries(models)) {
     rows().push(row);
     return clone(row);
   };
+  // Supports plain fields, the positional "list.$.field" and the filtered "list.$[name].field".
+  const targets = (row, path, filter, arrayFilters) => {
+    const [list, marker, field] = path.split(".");
+    if (!marker) return [[row, path]];
+    const wanted = (source, prefix) =>
+      Object.fromEntries(Object.entries(source).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => [k.slice(prefix.length), v]));
+    const cond = marker === "$" ? wanted(filter, `${list}.`) : wanted(arrayFilters[0], `${marker.slice(2, -1)}.`);
+    return (row[list] || []).filter((item) => matches(item, cond)).map((item) => [item, field]);
+  };
+  const apply = (row, update, filter = {}, arrayFilters = []) => {
+    for (const [path, value] of Object.entries(update.$set || {})) {
+      for (const [target, key] of targets(row, path, filter, arrayFilters)) target[key] = value;
+    }
+    for (const path of Object.keys(update.$unset || {})) {
+      for (const [target, key] of targets(row, path, filter, arrayFilters)) delete target[key];
+    }
+    for (const [key, by] of Object.entries(update.$inc || {})) row[key] = (row[key] || 0) + by;
+    row.updatedAt = clock();
+  };
   Model.updateOne = async (filter, update) => {
     const row = rows().find((r) => matches(r, filter));
     if (!row) return { matchedCount: 0 };
-    Object.assign(row, update.$set || {});
-    for (const key of Object.keys(update.$unset || {})) delete row[key];
-    row.updatedAt = clock();
+    apply(row, update, filter);
     return { matchedCount: 1 };
+  };
+  Model.updateMany = async (filter, update, options = {}) => {
+    const hit = rows().filter((r) => matches(r, filter));
+    hit.forEach((row) => apply(row, update, filter, options.arrayFilters));
+    return { matchedCount: hit.length, modifiedCount: hit.length };
+  };
+  Model.findOneAndUpdate = async (filter, update, options = {}) => {
+    let row = rows().find((r) => matches(r, filter));
+    if (!row && !options.upsert) return null;
+    const before = row ? clone(row) : null;
+    if (!row) {
+      const plain = Object.fromEntries(Object.entries(filter).filter(([, v]) => v === null || typeof v !== "object" || v.constructor?.name === "ObjectId"));
+      row = { _id: objectId(), createdAt: clock(), ...JSON.parse(JSON.stringify(plain)) };
+      rows().push(row);
+    }
+    apply(row, update);
+    return options.new ? clone(row) : before;
   };
   Model.deleteOne = async (filter) => {
     const i = rows().findIndex((r) => matches(r, filter));

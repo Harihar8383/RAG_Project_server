@@ -43,9 +43,9 @@ export async function startHarness() {
   };
 
   /** Arranges an indexed document for a user without going through UploadThing. */
-  const addDocument = async ({ user, projectId, name, pages, key = `key-${name}-${projectId}` }) => {
+  const addDocument = async ({ user, projectId, name, pages, key = `key-${name}-${projectId}`, hash }) => {
     const url = `https://files.example.test/${key}`;
-    services.addFile({ url, key, pages });
+    services.addFile({ url, key, pages, hash });
     const project = db.rows("Project").find((p) => p._id === projectId);
     const row = db.insert("Document", { project: project._id, name, url, key, status: "uploaded", chunkCount: 0 });
     return row;

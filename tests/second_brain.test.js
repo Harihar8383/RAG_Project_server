@@ -87,7 +87,7 @@ test("T11 Project routes cover list, create, read and delete", () => {
 
 test("T12 Chat and document routes cover conversations, messages and document management", () => {
   assert.deepEqual(routeList(chatRoutes), ["DELETE /:chatId", "GET /", "GET /:chatId/messages", "POST /", "POST /:chatId/messages"]);
-  assert.deepEqual(routeList(documentRoutes), ["DELETE /:documentId", "GET /", "POST /:documentId/retry"]);
+  assert.deepEqual(routeList(documentRoutes), ["DELETE /:documentId", "GET /", "POST /:documentId/quiz", "POST /:documentId/retry"]);
 });
 
 const sample = Array.from({ length: 400 }, (_, i) => `word${i}`).join(" ");

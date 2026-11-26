@@ -5,6 +5,7 @@ import { createRouteHandler } from "uploadthing/express";
 import projectRoutes from "./routes/project.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import documentRoutes from "./routes/document.routes.js";
+import examMapRoutes from "./routes/examMap.routes.js";
 import { createUploadRouter } from "./uploadthing.js";
 import { notFound, errorHandler } from "./middleware/errors.js";
 
@@ -35,6 +36,7 @@ export function createApp({ services, clientUrl = "http://localhost:5173", sessi
   }
   app.use("/api/projects/:projectId/documents", documentRoutes);
   app.use("/api/projects/:projectId/chats", chatRoutes);
+  app.use("/api/projects/:projectId/exam-map", examMapRoutes);
   app.use("/api/projects", projectRoutes);
 
   app.use(notFound);
